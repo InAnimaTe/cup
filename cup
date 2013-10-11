@@ -1,0 +1,53 @@
+#!/bin/bash
+
+## Cup was made to ensure that your essential services stay alive and well. Stop worrying, at least you aren't dealing with printers :)
+
+## Source the conf file
+source cup.conf
+
+## Set up the date format
+stamp=$(date "+%Y-%m-%d-%H:%M:%S")
+## Clean our logs dir
+find "$log_loc" -iname "*.log" -mmin +$backlog -type f | grep -v '^\.$' | xargs rm >/dev/null 2>&1
+
+log ()
+{
+code=$1
+text="$2"
+    echo " [$code] $text"
+    echo " [$code] $text" >> "$log_loc/$stamp.log"
+}
+
+
+check ()
+{
+procname=$1
+progname=$2
+
+    if pgrep $procname >/dev/null
+    then
+        log S "Process $procname is running just fine..."
+        continue
+    else
+        log E "Process $procname is NOT running...trying to start $progname..."
+        TRY_OUTPUT="$(service $progname start 2>&1)"
+        if [ $? == 0 ];
+        then
+            echo "On $stamp, $progname with process name $procname was not running but was successfully restarted. \n\n$TRY_OUTPUT" | mail -s "$procname was NOT running but restarted Successfully" $email
+            log S "We were able to get the service back up successfully!"
+        else
+            log E "Uhh ohh...Couldn't start the program $progname myself.."
+            echo "On $stamp, $progname with process name $procname was not running and could not be restarted. \n\n$TRY_OUTPUT" | mail -s "$procname was NOT running and could NOT be started" $email
+        fi
+    fi
+
+}
+
+
+## Iterate through our programs to check on
+
+for prog in "${checks[@]}" ; do
+    procname=$(echo "$prog" | awk -F " " '{print $1}')
+    progname=$(echo "$prog" | awk -F " " '{print $2}')
+    check "$procname" "$progname"
+done
