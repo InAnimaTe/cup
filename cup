@@ -33,11 +33,11 @@ progname=$2
         TRY_OUTPUT="$(service $progname start 2>&1)"
         if [ $? == 0 ];
         then
-            echo "On $stamp, $progname with process name $procname was not running but was successfully restarted. \n\n$TRY_OUTPUT" | mail -s "$procname was NOT running but restarted Successfully" $email
+            echo -e "On $stamp, $progname with process name $procname was not running but was successfully restarted. \n\n$TRY_OUTPUT" | mail -s "$procname was NOT running but restarted Successfully" $email
             log S "We were able to get the service back up successfully!"
         else
             log E "Uhh ohh...Couldn't start the program $progname myself.."
-            echo "On $stamp, $progname with process name $procname was not running and could not be restarted. \n\n$TRY_OUTPUT" | mail -s "$procname was NOT running and could NOT be started" $email
+            echo -e "On $stamp, $progname with process name $procname was not running and could not be restarted. \n\n$TRY_OUTPUT" | mail -s "$procname was NOT running and could NOT be started" $email
         fi
     fi
 
