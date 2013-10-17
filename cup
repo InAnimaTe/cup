@@ -73,7 +73,8 @@ jumpstart="$3"
         continue
     else
         log E "[$command] did not exit properly...trying to start $progname with [$jumpstart] command."
-        TRY_OUTPUT="$($jumpstart)"
+        local TRY_OUTPUT
+        TRY_OUTPUT=$(eval $jumpstart)
         if [ $? -eq 0 ];
         then
             log S "We were able to start process $progname via command [$jumpstart] successfully!"
