@@ -9,15 +9,31 @@ source cup.conf
 stamp=$(date "+%Y-%m-%d-%H:%M:%S")
 ## Clean our logs dir
 find "$log_loc" -iname "*.log" -mmin +$backlog -type f | grep -v '^\.$' | xargs rm >/dev/null 2>&1
+## Set our hostname
+HOST=$(hostname)
 
 log ()
 {
 code=$1
 text="$2"
-    echo " [$code] $text"
-    echo " [$code] $text" >> "$log_loc/$stamp.log"
+    ## Pushing to stdout
+
+    echo -e " [$code] $text"
+
+    ## Logging to file if enabled
+
+    [ "$log_loc" ] && echo -e " [$code] $text" >> "$log_loc/$stamp.log"
+
 }
 
+pushover ()
+{
+code=$1
+text="$2"
+
+    [ $enable_pushover ] && curl -s -F "token=$app_token" -F "user=$user_key" -F "message=[$code] $text" https://api.pushover.net/1/messages.json > /dev/null 2>&1
+
+}
 
 check ()
 {
@@ -31,23 +47,66 @@ progname=$2
     else
         log E "Process $procname is NOT running...trying to start $progname..."
         TRY_OUTPUT="$(service $progname start 2>&1)"
-        if [ $? == 0 ];
+        if [ $? -eq 0 ];
         then
-            echo -e "On $stamp, $progname with process name $procname was not running but was successfully restarted. \n\n$TRY_OUTPUT" | mail -s "$procname was NOT running but restarted Successfully" $email
-            log S "We were able to get the service back up successfully!"
+            log S "We were able to get the service $progname back up successfully!"
+            pushover S "[$HOST]: $progname was down but I've successfully started it back up!"
+            [ $email ] && echo -e "On $HOST at $stamp, $progname with process name $procname was not running but was successfully restarted. \n\n$TRY_OUTPUT" | mail -s "[S] [$HOST]: $procname was NOT running but restarted Successfully" $email
         else
-            log E "Uhh ohh...Couldn't start the program $progname myself.."
-            echo -e "On $stamp, $progname with process name $procname was not running and could not be restarted. \n\n$TRY_OUTPUT" | mail -s "$procname was NOT running and could NOT be started" $email
+            log E "Couldn't start the program $progname myself..\n$TRY_OUTPUT"
+            pushover E "[$HOST]: $progname is down and I can't bring it back! Hurry!!"
+            [ $email ] && echo -e "On $HOST at $stamp, $progname with process name $procname was not running and could not be restarted. \n\n$TRY_OUTPUT" | mail -s "[E] [$HOST]: $procname was NOT running and could NOT be started" $email
         fi
     fi
 
 }
 
+alts ()
+{
+progname="$1"
+command="$2"
+jumpstart="$3"
+    local TEST
+    TEST=$(eval $command)
+    if [ $? -eq 0 ]; then
+        log S "Process $progname is running just fine..."
+        continue
+    else
+        log E "[$command] did not exit properly...trying to start $progname with [$jumpstart] command."
+        TRY_OUTPUT="$($jumpstart)"
+        if [ $? -eq 0 ];
+        then
+            log S "We were able to start process $progname via command [$jumpstart] successfully!"
+            pushover S "[$HOST]: $progname was down but I've successfully started it back up!"
+            [ $email ] && echo -e "On $HOST at $stamp, $progname was not running but was successfully restarted using [$jumpstart]. \n\n$TRY_OUTPUT" | mail -s "[S] [$HOST]: $progname was NOT running but restarted Successfully" $email
+        else
+            log E "Uhh ohh...Couldn't start the program $progname myself..\n$TRY_OUTPUT"
+            pushover E "[$HOST]: $progname is down and I can't bring it back! Hurry!!"
+            [ $email ] && echo -e "On $HOST at $stamp, $progname was not running and could not be restarted with [$jumpstart]. \n\n$TRY_OUTPUT" | mail -s "[E] [$HOST]: $progname was NOT running and could NOT be started" $email
+        fi
+    fi
+}
 
 ## Iterate through our programs to check on
 
 for prog in "${checks[@]}" ; do
-    procname=$(echo "$prog" | awk -F " " '{print $1}')
-    progname=$(echo "$prog" | awk -F " " '{print $2}')
+    procname=$(echo -n "$prog" | awk -F " " '{print $1}')
+    progname=$(echo -n "$prog" | awk -F " " '{print $2}')
     check "$procname" "$progname"
 done
+
+## Iterate through our alternate, a command the user can give that should return "something" or something isnt running
+
+for comrun in "${alt[@]}" ; do
+    tocontinue=$(echo -n "$comrun" | awk -F "," '{print $1}')
+    progname=$(echo -n "$comrun" | awk -F "," '{print $2}')
+    TRY="$($tocontinue)"
+    if [ $? -eq 0 ]; then
+        command=$(echo -n "$comrun" | awk -F "," '{print $3}')
+        jumpstart=$(echo -n "$comrun" | awk -F "," '{print $4}')
+        alts "$progname" "$command" "$jumpstart"
+    else
+        log W "User given command did not pass....$progname won't be checked"
+    fi
+done
+
