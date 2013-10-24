@@ -7,8 +7,8 @@ source cup.conf
 
 ## Set up the date format
 stamp=$(date "+%Y-%m-%d-%H:%M:%S")
-## Clean our logs dir
-find "$log_loc" -iname "*.log" -mmin +$backlog -type f | grep -v '^\.$' | xargs rm >/dev/null 2>&1
+## Clean our logs dir the user has logging enabled
+[ "$log_loc" ] && find "$log_loc" -iname "*.log" -mmin +$backlog -type f | grep -v '^\.$' | xargs rm >/dev/null 2>&1
 ## Set our hostname
 HOST=$(hostname)
 
@@ -30,8 +30,22 @@ pushover ()
 {
 code=$1
 text="$2"
+    ## Sending pushover notification
+    curl -s -F "token=$app_token" -F "user=$user_key" -F "message=[$code] $text" https://api.pushover.net/1/messages.json > /dev/null 2>&1
 
-    [ $enable_pushover ] && curl -s -F "token=$app_token" -F "user=$user_key" -F "message=[$code] $text" https://api.pushover.net/1/messages.json > /dev/null 2>&1
+}
+
+elock ()
+{
+
+    find /tmp -type f -iname "elock" -mmin +$notetime | grep -v '^\.$' | xargs rm >/dev/null 2>&1
+    if [ -f /tmp/elock ]; then
+        return 1
+    else
+        touch /tmp/elock
+        return 0
+    fi
+
 
 }
 
@@ -50,12 +64,15 @@ progname=$2
         if [ $? -eq 0 ];
         then
             log S "We were able to get the service $progname back up successfully!"
-            pushover S "[$HOST]: $progname was down but I've successfully started it back up!"
+            [ "$enable_pushover" ] && pushover S "[$HOST]: $progname was down but I've successfully started it back up!"
             [ $email ] && echo -e "On $HOST at $stamp, $progname with process name $procname was not running but was successfully restarted. \n\n$TRY_OUTPUT" | mail -s "[S] [$HOST]: $procname was NOT running but restarted Successfully" $email
         else
             log E "Couldn't start the program $progname myself..\n$TRY_OUTPUT"
-            pushover E "[$HOST]: $progname is down and I can't bring it back! Hurry!!"
+            elock
+            if [ $? -eq 0 ]; then
+            [ "$enable_pushover" ] && pushover E "[$HOST]: $progname is down and I can't bring it back! Hurry!!"
             [ $email ] && echo -e "On $HOST at $stamp, $progname with process name $procname was not running and could not be restarted. \n\n$TRY_OUTPUT" | mail -s "[E] [$HOST]: $procname was NOT running and could NOT be started" $email
+            fi
         fi
     fi
 
@@ -78,12 +95,15 @@ jumpstart="$3"
         if [ $? -eq 0 ];
         then
             log S "We were able to start process $progname via command [$jumpstart] successfully!"
-            pushover S "[$HOST]: $progname was down but I've successfully started it back up!"
+            [ "$enable_pushover" ] && pushover S "[$HOST]: $progname was down but I've successfully started it back up!"
             [ $email ] && echo -e "On $HOST at $stamp, $progname was not running but was successfully restarted using [$jumpstart]. \n\n$TRY_OUTPUT" | mail -s "[S] [$HOST]: $progname was NOT running but restarted Successfully" $email
         else
             log E "Uhh ohh...Couldn't start the program $progname myself..\n$TRY_OUTPUT"
-            pushover E "[$HOST]: $progname is down and I can't bring it back! Hurry!!"
+            elock
+            if [ $? -eq 0 ]; then
+            [ "$enable_pushover" ] && pushover E "[$HOST]: $progname is down and I can't bring it back! Hurry!!"
             [ $email ] && echo -e "On $HOST at $stamp, $progname was not running and could not be restarted with [$jumpstart]. \n\n$TRY_OUTPUT" | mail -s "[E] [$HOST]: $progname was NOT running and could NOT be started" $email
+            fi
         fi
     fi
 }
